@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Price Tracker">
+  <title>Grocery Price Tracker</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/recharts@2.5.0/dist/Recharts.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+</head>
+<body style="margin: 0; padding: 0;">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+    const { BarChart3, Settings, Plus, Trash2, Camera, Download, Upload, RefreshCw, Edit3, Check, X, TrendingUp, TrendingDown, Minus, Wifi, WifiOff, Cloud, CloudOff } = lucide;
+    const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } = Recharts;
+
+// Firebase Configuration
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+
+// Initialize Firebase
+let db = null;
+let isFirebaseConfigured = false;
+
+try {
+  // Check if config has been updated from defaults
+  if (firebaseConfig.apiKey !== "YOUR_API_KEY") {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+    isFirebaseConfigured = true;
+  }
+} catch (error) {
+  console.warn("Firebase not configured. Using local storage only.", error);
+}
+
+const GroceryPriceTracker = () => {
+  const [activeTab, setActiveTab] = useState('prices');
+  const [stores, setStores] = useState(['Walmart', 'Target', 'Kroger', 'Costco']);
+  const [items, setItems] = useState([
+    { id: 1, name: 'Milk (1 Gallon)', category: 'Dairy', image: null, prices: { Walmart: 3.49, Target: 3.79, Kroger: 3.29, Costco: 2.99 }, history: [] },
+    { id: 2, name: 'Bread (White)', category: 'Bakery', image: null, prices: { Walmart: 2.49, Target: 2.69, Kroger: 2.39, Costco: 1.99 }, history: [] },
+    { id: 3, name: 'Eggs (Dozen)', category: 'Dairy', image: null, prices: { Walmart: 4.99, Target: 5.29, Kroger: 4.79, Costco: 4.49 }, history: [] }
+  ]);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemCategory, setNewItemCategory] = useState('');
+  const [newStoreName, setNewStoreName] = useState('');
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [bulkEditMode, setBulkEditMode] = useState(false);
+  const [selectedItems, setSelectedItems] = useState(new Set());
+  const [bulkEditCategory, setBulkEditCategory] = useState('');
+  const [selectedItemForHistory, setSelectedItemForHistory] = useState(null);
+  const [lastSync, setLastSync] = useState(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('');
+  const [isOnline, setIsOnline] = useState(true);
+  const [userId, setUserId] = useState(null);
+  const [isFirebaseReady, setIsFirebaseReady] = useState(false);
+
+  const isInitialMount = useRef(true);
+  const isSyncingFromFirebase = useRef(false);
+
+  // Initialize Firebase Auth (Anonymous)
+  useEffect(() => {
+    if (!isFirebaseConfigured) {
+      setSyncStatus('Firebase not configured. Using local storage only.');
+      setTimeout(() => setSyncStatus(''), 5000);
+      return;
+    }
+
+    const auth = firebase.auth();
+
+    // Sign in anonymously to get a unique user ID
+    auth.signInAnonymously()
+      .then((userCredential) => {
+        setUserId(userCredential.user.uid);
+        setIsFirebaseReady(true);
+        setSyncStatus('Connected to cloud sync!');
+        setTimeout(() => setSyncStatus(''), 3000);
+      })
+      .catch((error) => {
+        console.error("Auth error:", error);
+        setSyncStatus('Cloud sync unavailable. Using local storage.');
+        setTimeout(() => setSyncStatus(''), 5000);
+      });
+
+    // Monitor connection status
+    const connectedRef = db.ref('.info/connected');
+    connectedRef.on('value', (snapshot) => {
+      setIsOnline(snapshot.val() === true);
+    });
+
+    return () => {
+      connectedRef.off();
+    };
+  }, []);
+
+  // Load data from localStorage on mount
+  useEffect(() => {
+    const savedData = localStorage.getItem('groceryData');
+
+    if (savedData) {
+      try {
+        const data = JSON.parse(savedData);
+        setStores(data.stores || stores);
+        setItems(data.items || items);
+        setLastSync(data.lastSync || null);
+      } catch (error) {
+        console.error("Error loading local data:", error);
+      }
+    }
+  }, []);
+
+  // Set up real-time listeners for Firebase
+  useEffect(() => {
+    if (!isFirebaseReady || !userId) return;
+
+    const storesRef = db.ref(`users/${userId}/stores`);
+    const itemsRef = db.ref(`users/${userId}/items`);
+
+    // Listen for stores changes
+    const storesListener = storesRef.on('value', (snapshot) => {
+      if (snapshot.exists() && !isSyncingFromFirebase.current) {
+        isSyncingFromFirebase.current = true;
+        const firebaseStores = snapshot.val();
+        setStores(firebaseStores);
+        setLastSync(new Date().toISOString());
+
+        // Brief delay to prevent feedback loop
+        setTimeout(() => {
+          isSyncingFromFirebase.current = false;
+        }, 100);
+      }
+    });
+
+    // Listen for items changes
+    const itemsListener = itemsRef.on('value', (snapshot) => {
+      if (snapshot.exists() && !isSyncingFromFirebase.current) {
+        isSyncingFromFirebase.current = true;
+        const firebaseItems = snapshot.val();
+        setItems(firebaseItems);
+        setLastSync(new Date().toISOString());
+
+        // Brief delay to prevent feedback loop
+        setTimeout(() => {
+          isSyncingFromFirebase.current = false;
+        }, 100);
+      }
+    });
+
+    // Cleanup listeners
+    return () => {
+      storesRef.off('value', storesListener);
+      itemsRef.off('value', itemsListener);
+    };
+  }, [isFirebaseReady, userId]);
+
+  // Auto-sync to Firebase when stores or items change
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+
+    // Save to localStorage
+    const data = { stores, items, lastSync };
+    localStorage.setItem('groceryData', JSON.stringify(data));
+
+    // Sync to Firebase if ready and not currently syncing from Firebase
+    if (isFirebaseReady && userId && !isSyncingFromFirebase.current) {
+      syncToFirebase();
+    }
+  }, [stores, items]);
+
+  const syncToFirebase = async () => {
+    if (!isFirebaseReady || !userId || isSyncingFromFirebase.current) return;
+
+    try {
+      setIsSyncing(true);
+
+      const updates = {};
+      updates[`users/${userId}/stores`] = stores;
+      updates[`users/${userId}/items`] = items;
+      updates[`users/${userId}/lastSync`] = new Date().toISOString();
+
+      await db.ref().update(updates);
+
+      setLastSync(new Date().toISOString());
+      setIsSyncing(false);
+    } catch (error) {
+      console.error("Sync error:", error);
+      setIsSyncing(false);
+      setSyncStatus('Sync failed. Changes saved locally.');
+      setTimeout(() => setSyncStatus(''), 3000);
+    }
+  };
+
+  const manualRefresh = async () => {
+    if (!isFirebaseReady || !userId) {
+      setSyncStatus('Cloud sync not available');
+      setTimeout(() => setSyncStatus(''), 3000);
+      return;
+    }
+
+    try {
+      setIsSyncing(true);
+      setSyncStatus('Refreshing from cloud...');
+
+      const snapshot = await db.ref(`users/${userId}`).once('value');
+
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+
+        isSyncingFromFirebase.current = true;
+
+        if (data.stores) setStores(data.stores);
+        if (data.items) setItems(data.items);
+        if (data.lastSync) setLastSync(data.lastSync);
+
+        setSyncStatus('Refreshed successfully!');
+
+        setTimeout(() => {
+          isSyncingFromFirebase.current = false;
+        }, 100);
+      } else {
+        setSyncStatus('No cloud data found. Uploading current data...');
+        await syncToFirebase();
+        setSyncStatus('Data uploaded successfully!');
+      }
+
+      setTimeout(() => setSyncStatus(''), 3000);
+    } catch (error) {
+      console.error("Refresh error:", error);
+      setSyncStatus('Refresh failed: ' + error.message);
+      setTimeout(() => setSyncStatus(''), 5000);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const addItem = () => {
+    if (!newItemName.trim()) return;
+
+    const newItem = {
+      id: Date.now(),
+      name: newItemName,
+      category: newItemCategory || 'Uncategorized',
+      image: selectedImage,
+      prices: stores.reduce((acc, store) => ({ ...acc, [store]: 0 }), {}),
+      history: []
+    };
+
+    setItems([...items, newItem]);
+    setNewItemName('');
+    setNewItemCategory('');
+    setSelectedImage(null);
+  };
+
+  const removeItem = (id) => {
+    setItems(items.filter(item => item.id !== id));
+    setSelectedItems(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(id);
+      return newSet;
+    });
+  };
+
+  const updatePrice = (itemId, store, price) => {
+    setItems(items.map(item => {
+      if (item.id === itemId) {
+        const oldPrice = item.prices[store];
+        const newHistory = oldPrice !== parseFloat(price) && price !== '' ?
+          [...item.history, { date: new Date().toISOString(), store, price: parseFloat(price) }] :
+          item.history;
+
+        return {
+          ...item,
+          prices: { ...item.prices, [store]: price === '' ? 0 : parseFloat(price) },
+          history: newHistory
+        };
+      }
+      return item;
+    }));
+  };
+
+  const addStore = () => {
+    if (!newStoreName.trim() || stores.includes(newStoreName)) return;
+
+    setStores([...stores, newStoreName]);
+    setItems(items.map(item => ({
+      ...item,
+      prices: { ...item.prices, [newStoreName]: 0 }
+    })));
+    setNewStoreName('');
+  };
+
+  const removeStore = (storeName) => {
+    setStores(stores.filter(s => s !== storeName));
+    setItems(items.map(item => {
+      const newPrices = { ...item.prices };
+      delete newPrices[storeName];
+      return { ...item, prices: newPrices };
+    }));
+  };
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setSelectedImage(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const toggleItemSelection = (itemId) => {
+    setSelectedItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
+      } else {
+        newSet.add(itemId);
+      }
+      return newSet;
+    });
+  };
+
+  const applyBulkEdit = () => {
+    if (bulkEditCategory) {
+      setItems(items.map(item =>
+        selectedItems.has(item.id) ? { ...item, category: bulkEditCategory } : item
+      ));
+    }
+    setBulkEditMode(false);
+    setSelectedItems(new Set());
+    setBulkEditCategory('');
+  };
+
+  const exportData = () => {
+    const dataStr = JSON.stringify({ stores, items, exportDate: new Date().toISOString() }, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `grocery-prices-${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+  };
+
+  const importData = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = JSON.parse(event.target.result);
+          if (data.stores && data.items) {
+            setStores(data.stores);
+            setItems(data.items);
+            setSyncStatus('Data imported successfully!');
+            setTimeout(() => setSyncStatus(''), 3000);
+          }
+        } catch (error) {
+          setSyncStatus('Error importing data. Please check the file format.');
+          setTimeout(() => setSyncStatus(''), 5000);
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const getBestPrice = (item) => {
+    const prices = Object.entries(item.prices).filter(([_, price]) => price > 0);
+    if (prices.length === 0) return null;
+    return prices.reduce((min, [store, price]) => price < min.price ? { store, price } : min, { store: prices[0][0], price: prices[0][1] });
+  };
+
+  const getCategories = () => {
+    const cats = new Set(items.map(item => item.category));
+    return Array.from(cats).sort();
+  };
+
+  const getPriceHistoryData = (item) => {
+    if (!item.history || item.history.length === 0) return [];
+
+    const groupedByDate = item.history.reduce((acc, entry) => {
+      const date = new Date(entry.date).toLocaleDateString();
+      if (!acc[date]) {
+        acc[date] = { date };
+      }
+      acc[date][entry.store] = entry.price;
+      return acc;
+    }, {});
+
+    return Object.values(groupedByDate).sort((a, b) => new Date(a.date) - new Date(b.date));
+  };
+
+  const getPriceTrend = (item, store) => {
+    const storeHistory = item.history.filter(h => h.store === store).sort((a, b) => new Date(a.date) - new Date(b.date));
+    if (storeHistory.length < 2) return null;
+
+    const latest = storeHistory[storeHistory.length - 1].price;
+    const previous = storeHistory[storeHistory.length - 2].price;
+
+    if (latest > previous) return 'up';
+    if (latest < previous) return 'down';
+    return 'stable';
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center space-x-3">
+              <BarChart3 className="w-8 h-8 text-indigo-600" />
+              <h1 className="text-2xl font-bold text-gray-900">Price Tracker</h1>
+            </div>
+            <div className="flex items-center space-x-2">
+              {/* Sync Status Indicator */}
+              <div className="flex items-center space-x-2 px-3 py-2 bg-gray-100 rounded-lg">
+                {isOnline && isFirebaseReady ? (
+                  <Cloud className="w-4 h-4 text-green-600" />
+                ) : (
+                  <CloudOff className="w-4 h-4 text-gray-400" />
+                )}
+                <span className="text-xs text-gray-600 hidden sm:inline">
+                  {isOnline && isFirebaseReady ? 'Live Sync' : 'Local Only'}
+                </span>
+              </div>
+
+              {/* Manual Refresh Button */}
+              <button
+                onClick={manualRefresh}
+                disabled={isSyncing || !isFirebaseReady}
+                className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">{isSyncing ? 'Syncing...' : 'Refresh'}</span>
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mt-2 gap-2">
+            <div>
+              {lastSync && (
+                <p className="text-xs text-gray-500">Last synced: {new Date(lastSync).toLocaleString()}</p>
+              )}
+              {syncStatus && (
+                <p className="text-xs font-medium text-indigo-600 mt-1">{syncStatus}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Navigation */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="flex space-x-1 overflow-x-auto">
+            {['prices', 'history', 'settings'].map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-6 py-3 font-medium text-sm whitespace-nowrap border-b-2 transition-colors ${
+                  activeTab === tab
+                    ? 'border-indigo-600 text-indigo-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        {/* Prices Tab */}
+        {activeTab === 'prices' && (
+          <div className="space-y-6">
+            {/* Bulk Edit Controls */}
+            {bulkEditMode && (
+              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                  <span className="font-medium text-indigo-900">Bulk Edit Mode: {selectedItems.size} items selected</span>
+                  <div className="flex flex-wrap items-center gap-2 flex-1">
+                    <input
+                      type="text"
+                      placeholder="New category"
+                      value={bulkEditCategory}
+                      onChange={(e) => setBulkEditCategory(e.target.value)}
+                      className="px-3 py-2 border border-indigo-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent flex-1 min-w-[150px]"
+                    />
+                    <button
+                      onClick={applyBulkEdit}
+                      disabled={selectedItems.size === 0}
+                      className="flex items-center space-x-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>Apply</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setBulkEditMode(false);
+                        setSelectedItems(new Set());
+                        setBulkEditCategory('');
+                      }}
+                      className="flex items-center space-x-1 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+                    >
+                      <X className="w-4 h-4" />
+                      <span>Cancel</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setBulkEditMode(!bulkEditMode)}
+                className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+              >
+                <Edit3 className="w-4 h-4" />
+                <span>{bulkEditMode ? 'Exit Bulk Edit' : 'Bulk Edit'}</span>
+              </button>
+              <button
+                onClick={exportData}
+                className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export</span>
+              </button>
+              <label className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer">
+                <Upload className="w-4 h-4" />
+                <span>Import</span>
+                <input type="file" accept=".json" onChange={importData} className="hidden" />
+              </label>
+            </div>
+
+            {/* Add New Item */}
+            <div className="bg-white rounded-xl shadow-md p-6 border border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Add New Item</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <input
+                  type="text"
+                  placeholder="Item name"
+                  value={newItemName}
+                  onChange={(e) => setNewItemName(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+                <input
+                  type="text"
+                  placeholder="Category"
+                  value={newItemCategory}
+                  onChange={(e) => setNewItemCategory(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+                <label className="flex items-center justify-center px-4 py-2 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                  <Camera className="w-5 h-5 mr-2 text-gray-600" />
+                  <span className="text-sm text-gray-700">{selectedImage ? 'Image Added' : 'Add Image'}</span>
+                  <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                </label>
+                <button
+                  onClick={addItem}
+                  className="flex items-center justify-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                >
+                  <Plus className="w-5 h-5" />
+                  <span>Add Item</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Price Grid */}
+            <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-200">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      {bulkEditMode && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Select</th>}
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                      {stores.map(store => (
+                        <th key={store} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{store}</th>
+                      ))}
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Best Price</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {items.map(item => {
+                      const bestPrice = getBestPrice(item);
+                      return (
+                        <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                          {bulkEditMode && (
+                            <td className="px-4 py-4">
+                              <input
+                                type="checkbox"
+                                checked={selectedItems.has(item.id)}
+                                onChange={() => toggleItemSelection(item.id)}
+                                className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                              />
+                            </td>
+                          )}
+                          <td className="px-4 py-4">
+                            <div className="flex items-center space-x-3">
+                              {item.image && (
+                                <img src={item.image} alt={item.name} className="w-10 h-10 rounded-lg object-cover" />
+                              )}
+                              <span className="font-medium text-gray-900">{item.name}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4">
+                            <span className="px-2 py-1 text-xs font-medium bg-indigo-100 text-indigo-800 rounded-full">{item.category}</span>
+                          </td>
+                          {stores.map(store => {
+                            const trend = getPriceTrend(item, store);
+                            return (
+                              <td key={store} className="px-4 py-4">
+                                <div className="flex items-center space-x-1">
+                                  <span className="text-gray-600">$</span>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={item.prices[store] || ''}
+                                    onChange={(e) => updatePrice(item.id, store, e.target.value)}
+                                    className="w-20 px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                  />
+                                  {trend === 'up' && <TrendingUp className="w-4 h-4 text-red-500" />}
+                                  {trend === 'down' && <TrendingDown className="w-4 h-4 text-green-500" />}
+                                  {trend === 'stable' && <Minus className="w-4 h-4 text-gray-400" />}
+                                </div>
+                              </td>
+                            );
+                          })}
+                          <td className="px-4 py-4">
+                            {bestPrice && (
+                              <div className="text-sm">
+                                <div className="font-semibold text-green-600">${bestPrice.price.toFixed(2)}</div>
+                                <div className="text-gray-500">{bestPrice.store}</div>
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-4 py-4">
+                            <button
+                              onClick={() => removeItem(item.id)}
+                              className="text-red-600 hover:text-red-800 transition-colors"
+                            >
+                              <Trash2 className="w-5 h-5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Price History Tab */}
+        {activeTab === 'history' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-xl shadow-md p-6 border border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Select an Item to View Price History</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {items.map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => setSelectedItemForHistory(item)}
+                    className={`p-4 rounded-lg border-2 transition-all text-left ${
+                      selectedItemForHistory?.id === item.id
+                        ? 'border-indigo-600 bg-indigo-50'
+                        : 'border-gray-200 hover:border-indigo-300'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-3">
+                      {item.image && (
+                        <img src={item.image} alt={item.name} className="w-12 h-12 rounded-lg object-cover" />
+                      )}
+                      <div>
+                        <div className="font-medium text-gray-900">{item.name}</div>
+                        <div className="text-sm text-gray-500">{item.history.length} price updates</div>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {selectedItemForHistory && (
+              <div className="bg-white rounded-xl shadow-md p-6 border border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-900 mb-6">{selectedItemForHistory.name} - Price History</h2>
+
+                {selectedItemForHistory.history.length > 0 ? (
+                  <>
+                    {/* Chart */}
+                    <div className="mb-8">
+                      <ResponsiveContainer width="100%" height={300}>
+                        <LineChart data={getPriceHistoryData(selectedItemForHistory)}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="date" style={{ fontSize: '12px' }} />
+                          <YAxis style={{ fontSize: '12px' }} />
+                          <Tooltip />
+                          <Legend />
+                          {stores.map((store, idx) => (
+                            <Line
+                              key={store}
+                              type="monotone"
+                              dataKey={store}
+                              stroke={['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'][idx % 6]}
+                              strokeWidth={2}
+                              dot={{ r: 4 }}
+                              connectNulls
+                            />
+                          ))}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {/* History Table */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-gray-50 border-b border-gray-200">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Store</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {selectedItemForHistory.history
+                            .sort((a, b) => new Date(b.date) - new Date(a.date))
+                            .map((entry, idx) => (
+                              <tr key={idx} className="hover:bg-gray-50">
+                                <td className="px-4 py-3 text-sm text-gray-900">
+                                  {new Date(entry.date).toLocaleString()}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-900">{entry.store}</td>
+                                <td className="px-4 py-3 text-sm font-medium text-gray-900">${entry.price.toFixed(2)}</td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-gray-500 text-center py-8">No price history available for this item yet.</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Settings Tab */}
+        {activeTab === 'settings' && (
+          <div className="space-y-6">
+            {/* Manage Stores */}
+            <div className="bg-white rounded-xl shadow-md p-6 border border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Manage Stores</h2>
+              <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                <input
+                  type="text"
+                  placeholder="New store name"
+                  value={newStoreName}
+                  onChange={(e) => setNewStoreName(e.target.value)}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+                <button
+                  onClick={addStore}
+                  className="flex items-center justify-center space-x-2 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                >
+                  <Plus className="w-5 h-5" />
+                  <span>Add Store</span>
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {stores.map(store => (
+                  <div key={store} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <span className="font-medium text-gray-900">{store}</span>
+                    <button
+                      onClick={() => removeStore(store)}
+                      className="text-red-600 hover:text-red-800 transition-colors"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Categories Overview */}
+            <div className="bg-white rounded-xl shadow-md p-6 border border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Categories</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {getCategories().map(category => {
+                  const count = items.filter(item => item.category === category).length;
+                  return (
+                    <div key={category} className="p-3 bg-indigo-50 rounded-lg border border-indigo-200">
+                      <div className="font-medium text-indigo-900">{category}</div>
+                      <div className="text-sm text-indigo-600">{count} items</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Firebase Sync Configuration */}
+            <div className="bg-white rounded-xl shadow-md p-6 border border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Real-Time Cloud Sync</h2>
+
+              {isFirebaseReady ? (
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-2 text-green-600">
+                    <Check className="w-5 h-5" />
+                    <span className="font-medium">Real-time sync is active!</span>
+                  </div>
+
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <p className="text-sm text-blue-900 mb-3">
+                      ✨ Your data automatically syncs across all devices in real-time. Any changes you make will instantly appear on your other devices!
+                    </p>
+                    <div className="space-y-2 text-sm text-blue-800">
+                      <div className="flex items-center space-x-2">
+                        <div className={`w-3 h-3 rounded-full ${isOnline ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                        <span>Status: {isOnline ? 'Online & Syncing' : 'Offline (changes saved locally)'}</span>
+                      </div>
+                      {lastSync && (
+                        <div>Last synced: {new Date(lastSync).toLocaleString()}</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-gray-600">
+                    Configure Firebase to enable real-time synchronization across all your devices.
+                  </p>
+
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <p className="text-sm text-yellow-900 mb-2 font-medium">Setup Instructions:</p>
+                    <ol className="text-sm text-yellow-800 space-y-2 list-decimal list-inside">
+                      <li>Go to <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="underline font-medium">Firebase Console</a></li>
+                      <li>Create a new project or select an existing one</li>
+                      <li>Enable Realtime Database in your Firebase project</li>
+                      <li>Set database rules to allow read/write (for testing):
+                        <pre className="mt-2 bg-yellow-100 p-2 rounded text-xs overflow-x-auto">
+{`{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    }
+  }
+}`}
+                        </pre>
+                      </li>
+                      <li>Go to Project Settings → General → Your apps</li>
+                      <li>Copy your Firebase configuration and replace the values in the code</li>
+                    </ol>
+                  </div>
+
+                  <div className="bg-gray-100 border border-gray-300 rounded-lg p-4">
+                    <p className="text-sm text-gray-700 font-medium mb-2">Current Status:</p>
+                    <p className="text-sm text-gray-600">Using local storage only. Changes are saved on this device.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Stats */}
+            <div className="bg-white rounded-xl shadow-md p-6 border border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Statistics</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <div className="text-2xl font-bold text-blue-900">{items.length}</div>
+                  <div className="text-sm text-blue-600">Total Items</div>
+                </div>
+                <div className="p-4 bg-green-50 rounded-lg">
+                  <div className="text-2xl font-bold text-green-900">{stores.length}</div>
+                  <div className="text-sm text-green-600">Total Stores</div>
+                </div>
+                <div className="p-4 bg-purple-50 rounded-lg">
+                  <div className="text-2xl font-bold text-purple-900">
+                    {items.reduce((sum, item) => sum + item.history.length, 0)}
+                  </div>
+                  <div className="text-sm text-purple-600">Price Updates</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(GroceryPriceTracker));
+  </script>
+
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+</html>
