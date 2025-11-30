@@ -1611,12 +1611,12 @@
                 return;
             }
             
-            const clientId = 'YOUR_DROPBOX_APP_KEY'; // Users need to replace this
+            const clientId = 'l3m814o79hzm2jh'; // Users need to replace this
             const redirectUri = window.location.origin + window.location.pathname;
             const authUrl = `https://www.dropbox.com/oauth2/authorize?client_id=${clientId}&response_type=token&redirect_uri=${encodeURIComponent(redirectUri)}`;
             
             // Show instructions if app key not configured
-            if (clientId === 'YOUR_DROPBOX_APP_KEY') {
+            if (clientId === 'l3m814o79hzm2jh') {
                 alert('To enable Dropbox sync:\n\n1. Create a Dropbox app at https://www.dropbox.com/developers/apps\n2. Get your App Key\n3. Replace YOUR_DROPBOX_APP_KEY in the code with your actual App Key\n4. Add this page URL to your app\'s redirect URIs');
                 return;
             }
