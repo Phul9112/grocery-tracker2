@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Button Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 40px;
+            background: #0a0e27;
+            color: white;
+        }
+        .btn {
+            padding: 15px 30px;
+            margin: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            background: #00ff88;
+            color: #0a0e27;
+            border: none;
+            border-radius: 8px;
+        }
+        .btn:hover {
+            background: #00cc66;
+        }
+        #output {
+            margin-top: 20px;
+            padding: 20px;
+            background: #1e2749;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Button Test Page</h1>
+    <p>If these buttons work, the grocery app should work too!</p>
+    
+    <button class="btn" onclick="test1()">Test Button 1</button>
+    <button class="btn" onclick="test2()">Test Button 2</button>
+    <button class="btn" onclick="test3()">Add Item Test</button>
+    
+    <div id="output">
+        <strong>Output:</strong><br>
+        <span id="result">Click a button to test...</span>
+    </div>
+
+    <hr style="margin: 40px 0; border-color: #2a3254;">
+
+    <h2>📝 Diagnostic Info:</h2>
+    <div id="diagnostics" style="background: #1e2749; padding: 20px; border-radius: 8px; font-family: monospace; font-size: 14px;"></div>
+
+    <script>
+        // Test functions
+        function test1() {
+            document.getElementById('result').innerHTML = '✅ Button 1 clicked! JavaScript is working!';
+            console.log('Test 1 passed');
+        }
+
+        function test2() {
+            const now = new Date().toLocaleTimeString();
+            document.getElementById('result').innerHTML = `✅ Button 2 clicked at ${now}`;
+            console.log('Test 2 passed');
+        }
+
+        function test3() {
+            document.getElementById('result').innerHTML = '✅ Add Item button works! All systems operational.';
+            console.log('Test 3 passed');
+            alert('✅ Alert works too!');
+        }
+
+        // Run diagnostics
+        window.onload = function() {
+            const diag = document.getElementById('diagnostics');
+            let info = '';
+            
+            info += '🌐 Browser: ' + navigator.userAgent + '<br><br>';
+            info += '📍 Current URL: ' + window.location.href + '<br><br>';
+            info += '🔧 JavaScript: <span style="color: #00ff88;">✅ ENABLED</span><br><br>';
+            info += '💾 localStorage: ';
+            
+            try {
+                localStorage.setItem('test', 'test');
+                localStorage.removeItem('test');
+                info += '<span style="color: #00ff88;">✅ WORKING</span><br><br>';
+            } catch(e) {
+                info += '<span style="color: #ff4757;">❌ BLOCKED</span><br><br>';
+            }
+            
+            info += '📅 Date: ' + new Date().toString() + '<br><br>';
+            info += '<strong style="color: #00ff88;">If you can see this, JavaScript is working!</strong>';
+            
+            diag.innerHTML = info;
+            console.log('Diagnostics loaded successfully');
+        };
+    </script>
+</body>
+</html>
