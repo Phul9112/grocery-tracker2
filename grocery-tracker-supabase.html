@@ -1,0 +1,2009 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Basket Price Tracker - Real-Time Sync</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0e27;
+            --bg-secondary: #151b3d;
+            --bg-tertiary: #1e2749;
+            --accent-primary: #00ff88;
+            --accent-secondary: #00ccff;
+            --accent-danger: #ff4757;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a8c1;
+            --text-muted: #6b7597;
+            --border-color: #2a3254;
+            --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+            --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+            --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+        }
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, #0d1430 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .app-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        .header {
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            padding: 24px 32px;
+            margin-bottom: 24px;
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--border-color);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .app-title {
+            font-size: 28px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: var(--bg-primary);
+            box-shadow: 0 4px 12px rgba(0, 255, 136, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 255, 136, 0.4);
+        }
+
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border-color);
+            border-color: var(--accent-primary);
+        }
+
+        .btn-danger {
+            background: var(--accent-danger);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #e63946;
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+            background: var(--bg-secondary);
+            padding: 8px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            overflow-x: auto;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            background: transparent;
+            border: none;
+            border-radius: 8px;
+            color: var(--text-secondary);
+            font-family: 'DM Sans', sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            white-space: nowrap;
+        }
+
+        .tab.active {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: var(--bg-primary);
+            box-shadow: 0 2px 8px rgba(0, 255, 136, 0.3);
+        }
+
+        .tab:hover:not(.active) {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        /* Content Sections */
+        .content {
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--border-color);
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .section-hidden {
+            display: none;
+        }
+
+        /* Forms */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            color: var(--text-secondary);
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .form-input,
+        .form-select {
+            width: 100%;
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-family: 'DM Sans', sans-serif;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .form-input:focus,
+        .form-select:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(0, 255, 136, 0.1);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        /* Items Grid */
+        .items-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .items-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+            margin-top: 20px;
+        }
+
+        .item-card {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            transition: all 0.3s;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .item-card:hover {
+            border-color: var(--accent-primary);
+            box-shadow: 0 4px 16px rgba(0, 255, 136, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .item-card.selected {
+            border-color: var(--accent-primary);
+            background: rgba(0, 255, 136, 0.05);
+        }
+
+        .item-checkbox {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 20px;
+            height: 20px;
+            accent-color: var(--accent-primary);
+        }
+
+        .item-image {
+            width: 100%;
+            height: 160px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            background: var(--bg-primary);
+        }
+
+        .item-name {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+        }
+
+        .item-category {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .item-prices {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .price-tag {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 10px;
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .store-name {
+            color: var(--text-secondary);
+        }
+
+        .price-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            color: var(--accent-primary);
+        }
+
+        .item-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        /* Price Grid */
+        .price-grid-container {
+            overflow-x: auto;
+            margin-top: 20px;
+        }
+
+        .price-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        .price-table th,
+        .price-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .price-table th {
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .price-table tr:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .price-input {
+            width: 100px;
+            padding: 6px 10px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+        }
+
+        .price-input:focus {
+            border-color: var(--accent-primary);
+            outline: none;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            animation: fadeIn 0.3s;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            padding: 32px;
+            max-width: 600px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-lg);
+            animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .modal-title {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            transition: all 0.3s;
+        }
+
+        .modal-close:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        /* Settings */
+        .store-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .store-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+        }
+
+        .store-item-name {
+            font-weight: 500;
+        }
+
+        /* Chart Container */
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-top: 20px;
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            padding: 16px;
+        }
+
+        /* Status Badge */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-primary);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Sync Status */
+        .sync-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .sync-icon {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--accent-primary);
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .sync-icon.synced {
+            border: none;
+            background: var(--accent-primary);
+            border-radius: 50%;
+            animation: none;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Bulk Edit Bar */
+        .bulk-edit-bar {
+            display: none;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--accent-primary);
+            border-radius: 12px;
+            padding: 16px 24px;
+            margin-bottom: 20px;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        .bulk-edit-bar.active {
+            display: flex;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .bulk-edit-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .selected-count {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-primary);
+            font-weight: 600;
+        }
+
+        /* History List */
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+        }
+
+        .history-date {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .history-price {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            color: var(--accent-primary);
+        }
+
+        /* Image Upload */
+        .image-upload-container {
+            margin-top: 12px;
+        }
+
+        .image-preview {
+            width: 100%;
+            max-width: 300px;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-top: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .app-container {
+                padding: 12px;
+            }
+
+            .header {
+                padding: 16px 20px;
+            }
+
+            .app-title {
+                font-size: 22px;
+            }
+
+            .content {
+                padding: 16px;
+            }
+
+            .items-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            .modal-content {
+                padding: 24px;
+            }
+
+            .price-table {
+                font-size: 12px;
+            }
+
+            .price-table th,
+            .price-table td {
+                padding: 8px;
+            }
+
+            .tabs {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+        }
+
+        /* Loading State */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid var(--bg-tertiary);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        /* Notification */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px 20px;
+            box-shadow: var(--shadow-lg);
+            z-index: 2000;
+            animation: slideIn 0.3s ease-out;
+            max-width: 400px;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(100px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .notification.success {
+            border-color: var(--accent-primary);
+        }
+
+        .notification.error {
+            border-color: var(--accent-danger);
+        }
+
+        input[type="file"] {
+            padding: 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-content">
+                <div>
+                    <h1 class="app-title">🛒 Basket Price Tracker</h1>
+                    <div class="sync-status" id="syncStatus">
+                        <span id="syncIndicator"></span>
+                        <span id="syncText">Not connected</span>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" onclick="manualSync()">
+                        <span>🔄</span>
+                        <span>Sync Now</span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="exportData()">
+                        <span>📤</span>
+                        <span>Export</span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="document.getElementById('importFile').click()">
+                        <span>📥</span>
+                        <span>Import</span>
+                    </button>
+                    <input type="file" id="importFile" accept=".json" style="display: none;" onchange="importData(event)">
+                    <button class="btn btn-primary" onclick="handleAuth()" id="authBtn">
+                        <span>🔐</span>
+                        <span id="authBtnText">Sign In</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('items')">📦 Items</button>
+            <button class="tab" onclick="switchTab('priceGrid')">💰 Price Grid</button>
+            <button class="tab" onclick="switchTab('history')">📊 Price History</button>
+            <button class="tab" onclick="switchTab('settings')">⚙️ Settings</button>
+        </div>
+
+        <!-- Items Section -->
+        <div class="content" id="itemsSection">
+            <div class="items-header">
+                <h2>Your Grocery Items</h2>
+                <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                    <button class="btn btn-secondary" onclick="toggleBulkEdit()" id="bulkEditToggle">
+                        <span>✅</span>
+                        <span>Bulk Edit</span>
+                    </button>
+                    <button class="btn btn-primary" onclick="openAddItemModal()">
+                        <span>➕</span>
+                        <span>Add Item</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Bulk Edit Bar -->
+            <div class="bulk-edit-bar" id="bulkEditBar">
+                <div class="bulk-edit-info">
+                    <span class="selected-count" id="selectedCount">0 selected</span>
+                    <button class="btn btn-small btn-secondary" onclick="selectAllItems()">Select All</button>
+                    <button class="btn btn-small btn-secondary" onclick="deselectAllItems()">Deselect All</button>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button class="btn btn-small btn-secondary" onclick="bulkChangeCategory()">Change Category</button>
+                    <button class="btn btn-small btn-danger" onclick="bulkDeleteItems()">Delete Selected</button>
+                    <button class="btn btn-small btn-secondary" onclick="toggleBulkEdit()">Done</button>
+                </div>
+            </div>
+
+            <div class="items-grid" id="itemsGrid">
+                <!-- Items will be rendered here -->
+            </div>
+        </div>
+
+        <!-- Price Grid Section -->
+        <div class="content section-hidden" id="priceGridSection">
+            <div class="items-header">
+                <h2>Price Comparison Grid</h2>
+            </div>
+            <div class="price-grid-container">
+                <table class="price-table" id="priceTable">
+                    <!-- Table will be rendered here -->
+                </table>
+            </div>
+        </div>
+
+        <!-- History Section -->
+        <div class="content section-hidden" id="historySection">
+            <div class="items-header">
+                <h2>Price History</h2>
+                <select class="form-select" id="historyItemSelect" onchange="showItemHistory()" style="max-width: 300px;">
+                    <option value="">Select an item</option>
+                </select>
+            </div>
+            <div id="historyContent">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📊</div>
+                    <p>Select an item to view its price history</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Section -->
+        <div class="content section-hidden" id="settingsSection">
+            <h2 style="margin-bottom: 24px;">Settings</h2>
+            
+            <div class="form-group">
+                <label class="form-label">Manage Stores</label>
+                <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                    <input type="text" class="form-input" id="newStoreName" placeholder="Store name" style="flex: 1;">
+                    <button class="btn btn-primary" onclick="addStore()">Add Store</button>
+                </div>
+                <div class="store-list" id="storeList">
+                    <!-- Stores will be rendered here -->
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 32px;">
+                <label class="form-label">Auto-Sync Interval</label>
+                <select class="form-select" id="syncInterval" onchange="updateSyncInterval()">
+                    <option value="30">Every 30 seconds</option>
+                    <option value="60">Every 1 minute</option>
+                    <option value="300">Every 5 minutes</option>
+                    <option value="0">Manual only</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Item Modal -->
+    <div class="modal" id="addItemModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Add New Item</h3>
+                <button class="modal-close" onclick="closeModal('addItemModal')">×</button>
+            </div>
+            <form onsubmit="addItem(event)">
+                <div class="form-group">
+                    <label class="form-label">Item Name *</label>
+                    <input type="text" class="form-input" id="itemName" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Category</label>
+                    <input type="text" class="form-input" id="itemCategory" placeholder="e.g., Produce, Dairy, Meat">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Product Image</label>
+                    <input type="file" class="form-input" id="itemImage" accept="image/*" onchange="previewImage(event, 'imagePreview')">
+                    <img id="imagePreview" class="image-preview" style="display: none;">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Prices (leave blank to add later)</label>
+                    <div id="storePriceInputs"></div>
+                </div>
+                <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('addItemModal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Item</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Item Modal -->
+    <div class="modal" id="editItemModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Edit Item</h3>
+                <button class="modal-close" onclick="closeModal('editItemModal')">×</button>
+            </div>
+            <form onsubmit="updateItem(event)">
+                <input type="hidden" id="editItemId">
+                <div class="form-group">
+                    <label class="form-label">Item Name *</label>
+                    <input type="text" class="form-input" id="editItemName" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Category</label>
+                    <input type="text" class="form-input" id="editItemCategory">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Product Image</label>
+                    <input type="file" class="form-input" id="editItemImage" accept="image/*" onchange="previewImage(event, 'editImagePreview')">
+                    <img id="editImagePreview" class="image-preview" style="display: none;">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Prices</label>
+                    <div id="editStorePriceInputs"></div>
+                </div>
+                <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('editItemModal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Update Item</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // ========================================
+        // SUPABASE CONFIGURATION
+        // ========================================
+        // Get these from: https://supabase.com/dashboard/project/YOUR_PROJECT/settings/api
+        const SUPABASE_URL = 'YOUR_SUPABASE_URL'; // Replace with your Supabase project URL
+        const SUPABASE_KEY = 'YOUR_SUPABASE_KEY'; // Replace with your Supabase anon/public key
+
+        // Initialize Supabase
+        let supabase;
+        let supabaseEnabled = false;
+        let currentUser = null;
+        let realtimeChannel = null;
+
+        try {
+            if (SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_KEY !== 'YOUR_SUPABASE_KEY') {
+                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                supabaseEnabled = true;
+                console.log('✅ Supabase initialized');
+            } else {
+                console.log('⚠️ Supabase not configured - using localStorage');
+            }
+        } catch (error) {
+            console.error('❌ Supabase initialization error:', error);
+            console.log('📝 Falling back to localStorage mode');
+        }
+
+        // ========================================
+        // APP STATE
+        // ========================================
+        let appData = {
+            stores: ['Walmart', 'Target', 'Kroger'],
+            items: [],
+            priceHistory: {},
+            syncInterval: 30,
+            lastSync: null
+        };
+
+        let bulkEditMode = false;
+        let selectedItems = new Set();
+
+        // ========================================
+        // AUTHENTICATION
+        // ========================================
+        async function checkAuth() {
+            if (!supabaseEnabled) {
+                loadFromLocalStorage();
+                updateSyncStatus('LocalStorage mode');
+                return;
+            }
+
+            const { data: { session } } = await supabase.auth.getSession();
+            
+            if (session) {
+                currentUser = session.user;
+                console.log('✅ Signed in as:', currentUser.email);
+                document.getElementById('authBtnText').textContent = 'Sign Out';
+                updateSyncStatus('Connected as ' + currentUser.email.split('@')[0]);
+                await loadFromSupabase();
+                subscribeToChanges();
+            } else {
+                console.log('❌ Not signed in');
+                updateSyncStatus('Not signed in');
+            }
+        }
+
+        // Listen for auth changes
+        if (supabaseEnabled) {
+            supabase.auth.onAuthStateChange((event, session) => {
+                if (event === 'SIGNED_IN') {
+                    currentUser = session.user;
+                    document.getElementById('authBtnText').textContent = 'Sign Out';
+                    updateSyncStatus('Connected as ' + currentUser.email.split('@')[0]);
+                    loadFromSupabase();
+                    subscribeToChanges();
+                    showNotification('Signed in successfully!', 'success');
+                } else if (event === 'SIGNED_OUT') {
+                    currentUser = null;
+                    document.getElementById('authBtnText').textContent = 'Sign In';
+                    updateSyncStatus('Not signed in');
+                    if (realtimeChannel) {
+                        supabase.removeChannel(realtimeChannel);
+                    }
+                    appData = {
+                        stores: ['Walmart', 'Target', 'Kroger'],
+                        items: [],
+                        priceHistory: {},
+                        syncInterval: 30,
+                        lastSync: null
+                    };
+                    renderAll();
+                }
+            });
+        }
+
+        async function handleAuth() {
+            if (!supabaseEnabled) {
+                showNotification('🔧 Supabase not configured. Using localStorage mode.', 'error');
+                console.log('To enable Supabase:');
+                console.log('1. Go to https://supabase.com');
+                console.log('2. Create a project');
+                console.log('3. Get your URL and KEY');
+                console.log('4. Replace YOUR_SUPABASE_URL and YOUR_SUPABASE_KEY in the code');
+                return;
+            }
+
+            if (currentUser) {
+                // Sign out
+                await supabase.auth.signOut();
+                showNotification('Signed out', 'success');
+            } else {
+                // Sign in with magic link
+                const email = prompt('Enter your email to sign in:');
+                if (email) {
+                    const { error } = await supabase.auth.signInWithOtp({
+                        email: email,
+                        options: {
+                            emailRedirectTo: window.location.href
+                        }
+                    });
+                    
+                    if (error) {
+                        showNotification('Error: ' + error.message, 'error');
+                    } else {
+                        showNotification('✅ Check your email for the sign-in link!', 'success');
+                    }
+                }
+            }
+        }
+
+        // ========================================
+        // SUPABASE DATA SYNC
+        // ========================================
+        async function saveToSupabase() {
+            if (!supabaseEnabled || !currentUser) {
+                saveToSupabase();
+                return;
+            }
+
+            try {
+                appData.lastSync = new Date().toISOString();
+
+                const { data, error } = await supabase
+                    .from('grocery_data')
+                    .upsert({
+                        user_id: currentUser.id,
+                        data: appData,
+                        updated_at: new Date().toISOString()
+                    }, {
+                        onConflict: 'user_id'
+                    });
+
+                if (error) throw error;
+
+                console.log('💾 Data saved to Supabase');
+                updateSyncStatus('Synced at ' + new Date().toLocaleTimeString());
+            } catch (error) {
+                console.error('Save error:', error);
+                showNotification('Sync failed: ' + error.message, 'error');
+                saveToSupabase(); // Fallback
+            }
+        }
+
+        async function loadFromSupabase() {
+            if (!supabaseEnabled || !currentUser) return;
+
+            try {
+                const { data, error } = await supabase
+                    .from('grocery_data')
+                    .select('data')
+                    .eq('user_id', currentUser.id)
+                    .single();
+
+                if (error && error.code !== 'PGRST116') throw error;
+
+                if (data && data.data) {
+                    appData = data.data;
+                    renderAll();
+                    console.log('📥 Data loaded from Supabase');
+                } else {
+                    // First time - save current data
+                    await saveToSupabase();
+                }
+            } catch (error) {
+                console.error('Load error:', error);
+                showNotification('Failed to load data', 'error');
+            }
+        }
+
+        function subscribeToChanges() {
+            if (!supabaseEnabled || !currentUser) return;
+
+            // Remove existing subscription
+            if (realtimeChannel) {
+                supabase.removeChannel(realtimeChannel);
+            }
+
+            // Subscribe to real-time changes
+            realtimeChannel = supabase
+                .channel('grocery_changes')
+                .on(
+                    'postgres_changes',
+                    {
+                        event: '*',
+                        schema: 'public',
+                        table: 'grocery_data',
+                        filter: `user_id=eq.${currentUser.id}`
+                    },
+                    (payload) => {
+                        console.log('🔄 Real-time update received');
+                        if (payload.new && payload.new.data) {
+                            appData = payload.new.data;
+                            renderAll();
+                            showNotification('✨ Data synced from another device!', 'success');
+                        }
+                    }
+                )
+                .subscribe();
+
+            console.log('👂 Listening for real-time updates');
+        }
+
+        function manualSync() {
+            if (supabaseEnabled && currentUser) {
+                saveToSupabase();
+                showNotification('Synced to cloud!', 'success');
+            } else {
+                saveToSupabase();
+                showNotification('Saved locally!', 'success');
+            }
+        }
+
+        // ========================================
+        // LOCALSTORAGE FALLBACK
+        // ========================================
+        function saveToSupabase() {
+            try {
+                localStorage.setItem('groceryTrackerData', JSON.stringify(appData));
+                appData.lastSync = new Date().toISOString();
+                console.log('💾 Saved to localStorage');
+            } catch(e) {
+                console.error('localStorage error:', e);
+            }
+        }
+
+        function loadFromLocalStorage() {
+            const saved = localStorage.getItem('groceryTrackerData');
+            if (saved) {
+                try {
+                    appData = JSON.parse(saved);
+                    console.log('📦 Loaded from localStorage');
+                } catch(e) {
+                    console.error('Parse error:', e);
+                }
+            }
+        }
+
+        // ========================================
+        // INITIALIZE APP
+        // ========================================
+        async function init() {
+            console.log('🚀 App initializing...');
+            
+            if (supabaseEnabled) {
+                await checkAuth();
+            } else {
+                loadFromLocalStorage();
+            }
+            
+            renderAll();
+            console.log('✅ App ready!');
+        }
+
+        // ========================================
+        // RENDER FUNCTIONS
+        // ========================================
+        function renderAll() {
+            renderStores();
+            renderItems();
+            renderPriceGrid();
+            updateHistorySelect();
+            document.getElementById('syncInterval').value = appData.syncInterval;
+        }
+
+        function updateSyncInterval() {
+            appData.syncInterval = parseInt(document.getElementById('syncInterval').value);
+            if (supabaseEnabled && currentUser) {
+                saveToSupabase();
+            } else {
+                saveToSupabase();
+            }
+            showNotification('Sync interval updated', 'success');
+        }
+
+        // Local Storage with Auto-Backup
+        function saveToSupabase() {
+            const dataToSave = JSON.stringify(appData);
+            localStorage.setItem('groceryTrackerData', dataToSave);
+            
+            // Also save to a backup slot
+            const backupKey = 'groceryTrackerBackup_' + new Date().toISOString().split('T')[0];
+            localStorage.setItem(backupKey, dataToSave);
+            
+            appData.lastSync = new Date().toISOString();
+            
+            // Keep only last 7 days of backups
+            cleanOldBackups();
+        }
+
+        function cleanOldBackups() {
+            const keys = Object.keys(localStorage);
+            const backupKeys = keys.filter(k => k.startsWith('groceryTrackerBackup_')).sort();
+            if (backupKeys.length > 7) {
+                backupKeys.slice(0, backupKeys.length - 7).forEach(k => localStorage.removeItem(k));
+            }
+        }
+
+        function loadFromLocalStorage() {
+            const saved = localStorage.getItem('groceryTrackerData');
+            if (saved) {
+                try {
+                    appData = JSON.parse(saved);
+                } catch(e) {
+                    console.error('Error loading data:', e);
+                }
+            }
+        }
+
+        function startAutoSync() {
+            if (syncIntervalId) {
+                clearInterval(syncIntervalId);
+            }
+            
+            const interval = appData.syncInterval * 1000;
+            if (interval > 0) {
+                syncIntervalId = setInterval(() => {
+                    saveToSupabase();
+                    updateSyncStatus('Auto-saved at ' + new Date().toLocaleTimeString());
+                }, interval);
+            }
+        }
+
+        function manualSync() {
+            saveToSupabase();
+            showNotification('Data saved successfully!', 'success');
+            updateSyncStatus('Synced at ' + new Date().toLocaleTimeString());
+        }
+
+        function updateSyncInterval() {
+            appData.syncInterval = parseInt(document.getElementById('syncInterval').value);
+            saveToSupabase();
+            startAutoSync();
+            showNotification('Sync interval updated', 'success');
+        }
+
+        function updateSyncStatus(status) {
+            const indicator = document.getElementById('syncIndicator');
+            const text = document.getElementById('syncText');
+            
+            text.textContent = status;
+            
+            if (status.includes('saving') || status.includes('Syncing')) {
+                indicator.innerHTML = '<div class="sync-icon"></div>';
+            } else {
+                indicator.innerHTML = '<div class="sync-icon synced"></div>';
+            }
+        }
+
+        // Tab Switching
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.content').forEach(c => c.classList.add('section-hidden'));
+            
+            event.target.classList.add('active');
+            
+            if (tab === 'items') {
+                document.getElementById('itemsSection').classList.remove('section-hidden');
+            } else if (tab === 'priceGrid') {
+                document.getElementById('priceGridSection').classList.remove('section-hidden');
+                renderPriceGrid();
+            } else if (tab === 'history') {
+                document.getElementById('historySection').classList.remove('section-hidden');
+            } else if (tab === 'settings') {
+                document.getElementById('settingsSection').classList.remove('section-hidden');
+            }
+        }
+
+        // Store Management
+        function addStore() {
+            const name = document.getElementById('newStoreName').value.trim();
+            if (name && !appData.stores.includes(name)) {
+                appData.stores.push(name);
+                saveToSupabase();
+                renderStores();
+                renderItems();
+                renderPriceGrid();
+                document.getElementById('newStoreName').value = '';
+                showNotification('Store added successfully!', 'success');
+            }
+        }
+
+        function removeStore(storeName) {
+            if (confirm(`Remove ${storeName}? This will delete all prices for this store.`)) {
+                appData.stores = appData.stores.filter(s => s !== storeName);
+                appData.items.forEach(item => {
+                    delete item.prices[storeName];
+                });
+                saveToSupabase();
+                renderStores();
+                renderItems();
+                renderPriceGrid();
+                showNotification('Store removed', 'success');
+            }
+        }
+
+        function renderStores() {
+            const storeList = document.getElementById('storeList');
+            storeList.innerHTML = appData.stores.map(store => `
+                <div class="store-item">
+                    <span class="store-item-name">${store}</span>
+                    <button class="btn btn-small btn-danger" onclick="removeStore('${store}')">Remove</button>
+                </div>
+            `).join('');
+            
+            updateStorePriceInputs();
+        }
+
+        function updateStorePriceInputs() {
+            const container1 = document.getElementById('storePriceInputs');
+            const container2 = document.getElementById('editStorePriceInputs');
+            
+            const html = appData.stores.map(store => `
+                <div style="margin-bottom: 12px;">
+                    <label class="form-label">${store}</label>
+                    <input type="number" class="form-input" data-store="${store}" placeholder="$0.00" step="0.01" min="0">
+                </div>
+            `).join('');
+            
+            if (container1) container1.innerHTML = html;
+            if (container2) container2.innerHTML = html;
+        }
+
+        // Item Management
+        function openAddItemModal() {
+            updateStorePriceInputs();
+            document.getElementById('itemName').value = '';
+            document.getElementById('itemCategory').value = '';
+            document.getElementById('itemImage').value = '';
+            document.getElementById('imagePreview').style.display = 'none';
+            document.getElementById('addItemModal').classList.add('active');
+        }
+
+        function addItem(e) {
+            e.preventDefault();
+            
+            const name = document.getElementById('itemName').value.trim();
+            const category = document.getElementById('itemCategory').value.trim();
+            const imageFile = document.getElementById('itemImage').files[0];
+            
+            const prices = {};
+            document.querySelectorAll('#storePriceInputs input').forEach(input => {
+                const store = input.dataset.store;
+                const value = parseFloat(input.value);
+                if (value) {
+                    prices[store] = value;
+                }
+            });
+            
+            const item = {
+                id: Date.now().toString(),
+                name,
+                category,
+                prices,
+                image: null,
+                created: new Date().toISOString()
+            };
+            
+            if (imageFile) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    item.image = e.target.result;
+                    appData.items.push(item);
+                    
+                    // Initialize price history
+                    Object.keys(prices).forEach(store => {
+                        if (!appData.priceHistory[item.id]) {
+                            appData.priceHistory[item.id] = {};
+                        }
+                        if (!appData.priceHistory[item.id][store]) {
+                            appData.priceHistory[item.id][store] = [];
+                        }
+                        appData.priceHistory[item.id][store].push({
+                            price: prices[store],
+                            date: new Date().toISOString()
+                        });
+                    });
+                    
+                    saveToSupabase();
+                    renderItems();
+                    renderPriceGrid();
+                    updateHistorySelect();
+                    closeModal('addItemModal');
+                    showNotification('Item added successfully!', 'success');
+                };
+                reader.readAsDataURL(imageFile);
+            } else {
+                appData.items.push(item);
+                
+                // Initialize price history
+                Object.keys(prices).forEach(store => {
+                    if (!appData.priceHistory[item.id]) {
+                        appData.priceHistory[item.id] = {};
+                    }
+                    if (!appData.priceHistory[item.id][store]) {
+                        appData.priceHistory[item.id][store] = [];
+                    }
+                    appData.priceHistory[item.id][store].push({
+                        price: prices[store],
+                        date: new Date().toISOString()
+                    });
+                });
+                
+                saveToSupabase();
+                renderItems();
+                renderPriceGrid();
+                updateHistorySelect();
+                closeModal('addItemModal');
+                showNotification('Item added successfully!', 'success');
+            }
+        }
+
+        function openEditItemModal(itemId) {
+            const item = appData.items.find(i => i.id === itemId);
+            if (!item) return;
+            
+            document.getElementById('editItemId').value = itemId;
+            document.getElementById('editItemName').value = item.name;
+            document.getElementById('editItemCategory').value = item.category || '';
+            
+            if (item.image) {
+                document.getElementById('editImagePreview').src = item.image;
+                document.getElementById('editImagePreview').style.display = 'block';
+            } else {
+                document.getElementById('editImagePreview').style.display = 'none';
+            }
+            
+            updateStorePriceInputs();
+            
+            document.querySelectorAll('#editStorePriceInputs input').forEach(input => {
+                const store = input.dataset.store;
+                if (item.prices[store]) {
+                    input.value = item.prices[store];
+                }
+            });
+            
+            document.getElementById('editItemModal').classList.add('active');
+        }
+
+        function updateItem(e) {
+            e.preventDefault();
+            
+            const itemId = document.getElementById('editItemId').value;
+            const item = appData.items.find(i => i.id === itemId);
+            if (!item) return;
+            
+            const oldPrices = { ...item.prices };
+            
+            item.name = document.getElementById('editItemName').value.trim();
+            item.category = document.getElementById('editItemCategory').value.trim();
+            
+            const imageFile = document.getElementById('editItemImage').files[0];
+            
+            const newPrices = {};
+            document.querySelectorAll('#editStorePriceInputs input').forEach(input => {
+                const store = input.dataset.store;
+                const value = parseFloat(input.value);
+                if (value) {
+                    newPrices[store] = value;
+                }
+            });
+            
+            item.prices = newPrices;
+            
+            // Update price history
+            Object.keys(newPrices).forEach(store => {
+                if (oldPrices[store] !== newPrices[store]) {
+                    if (!appData.priceHistory[itemId]) {
+                        appData.priceHistory[itemId] = {};
+                    }
+                    if (!appData.priceHistory[itemId][store]) {
+                        appData.priceHistory[itemId][store] = [];
+                    }
+                    appData.priceHistory[itemId][store].push({
+                        price: newPrices[store],
+                        date: new Date().toISOString()
+                    });
+                }
+            });
+            
+            if (imageFile) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    item.image = e.target.result;
+                    saveToSupabase();
+                    renderItems();
+                    renderPriceGrid();
+                    closeModal('editItemModal');
+                    showNotification('Item updated successfully!', 'success');
+                };
+                reader.readAsDataURL(imageFile);
+            } else {
+                saveToSupabase();
+                renderItems();
+                renderPriceGrid();
+                closeModal('editItemModal');
+                showNotification('Item updated successfully!', 'success');
+            }
+        }
+
+        function deleteItem(itemId) {
+            if (confirm('Delete this item?')) {
+                appData.items = appData.items.filter(i => i.id !== itemId);
+                delete appData.priceHistory[itemId];
+                saveToSupabase();
+                renderItems();
+                renderPriceGrid();
+                updateHistorySelect();
+                showNotification('Item deleted', 'success');
+            }
+        }
+
+        function renderItems() {
+            const grid = document.getElementById('itemsGrid');
+            
+            if (appData.items.length === 0) {
+                grid.innerHTML = `
+                    <div class="empty-state" style="grid-column: 1 / -1;">
+                        <div class="empty-state-icon">📦</div>
+                        <p>No items yet. Add your first grocery item!</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            grid.innerHTML = appData.items.map(item => {
+                const priceList = Object.entries(item.prices).map(([store, price]) => `
+                    <div class="price-tag">
+                        <span class="store-name">${store}</span>
+                        <span class="price-value">$${price.toFixed(2)}</span>
+                    </div>
+                `).join('');
+                
+                const isSelected = selectedItems.has(item.id);
+                
+                return `
+                    <div class="item-card ${isSelected ? 'selected' : ''}" onclick="${bulkEditMode ? `toggleItemSelection('${item.id}')` : ''}">
+                        ${bulkEditMode ? `<input type="checkbox" class="item-checkbox" ${isSelected ? 'checked' : ''} onclick="toggleItemSelection('${item.id}')">` : ''}
+                        ${item.image ? `<img src="${item.image}" alt="${item.name}" class="item-image">` : `<div class="item-image"></div>`}
+                        <div class="item-name">${item.name}</div>
+                        ${item.category ? `<div class="item-category">${item.category}</div>` : ''}
+                        <div class="item-prices">${priceList || '<div class="price-tag"><span class="store-name">No prices set</span></div>'}</div>
+                        ${!bulkEditMode ? `
+                            <div class="item-actions">
+                                <button class="btn btn-small btn-secondary" onclick="event.stopPropagation(); openEditItemModal('${item.id}')">Edit</button>
+                                <button class="btn btn-small btn-danger" onclick="event.stopPropagation(); deleteItem('${item.id}')">Delete</button>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Bulk Edit Functions
+        function toggleBulkEdit() {
+            bulkEditMode = !bulkEditMode;
+            selectedItems.clear();
+            
+            if (bulkEditMode) {
+                document.getElementById('bulkEditBar').classList.add('active');
+                document.getElementById('bulkEditToggle').innerHTML = '<span>✅</span><span>Exit Bulk Edit</span>';
+            } else {
+                document.getElementById('bulkEditBar').classList.remove('active');
+                document.getElementById('bulkEditToggle').innerHTML = '<span>✅</span><span>Bulk Edit</span>';
+            }
+            
+            renderItems();
+            updateSelectedCount();
+        }
+
+        function toggleItemSelection(itemId) {
+            event.stopPropagation();
+            if (selectedItems.has(itemId)) {
+                selectedItems.delete(itemId);
+            } else {
+                selectedItems.add(itemId);
+            }
+            renderItems();
+            updateSelectedCount();
+        }
+
+        function selectAllItems() {
+            appData.items.forEach(item => selectedItems.add(item.id));
+            renderItems();
+            updateSelectedCount();
+        }
+
+        function deselectAllItems() {
+            selectedItems.clear();
+            renderItems();
+            updateSelectedCount();
+        }
+
+        function updateSelectedCount() {
+            document.getElementById('selectedCount').textContent = `${selectedItems.size} selected`;
+        }
+
+        function bulkChangeCategory() {
+            if (selectedItems.size === 0) {
+                showNotification('No items selected', 'error');
+                return;
+            }
+            
+            const newCategory = prompt('Enter new category for selected items:');
+            if (newCategory !== null) {
+                selectedItems.forEach(itemId => {
+                    const item = appData.items.find(i => i.id === itemId);
+                    if (item) {
+                        item.category = newCategory.trim();
+                    }
+                });
+                saveToSupabase();
+                renderItems();
+                showNotification(`Category updated for ${selectedItems.size} items`, 'success');
+            }
+        }
+
+        function bulkDeleteItems() {
+            if (selectedItems.size === 0) {
+                showNotification('No items selected', 'error');
+                return;
+            }
+            
+            if (confirm(`Delete ${selectedItems.size} selected items?`)) {
+                appData.items = appData.items.filter(item => !selectedItems.has(item.id));
+                selectedItems.forEach(itemId => {
+                    delete appData.priceHistory[itemId];
+                });
+                selectedItems.clear();
+                saveToSupabase();
+                renderItems();
+                renderPriceGrid();
+                updateHistorySelect();
+                updateSelectedCount();
+                showNotification('Items deleted', 'success');
+            }
+        }
+
+        // Price Grid
+        function renderPriceGrid() {
+            const table = document.getElementById('priceTable');
+            
+            if (appData.items.length === 0 || appData.stores.length === 0) {
+                table.innerHTML = `
+                    <tr>
+                        <td colspan="100%" style="text-align: center; padding: 60px 20px; color: var(--text-muted);">
+                            ${appData.items.length === 0 ? 'Add some items first' : 'Add some stores first'}
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            const headers = `
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th>Category</th>
+                        ${appData.stores.map(store => `<th>${store}</th>`).join('')}
+                    </tr>
+                </thead>
+            `;
+            
+            const rows = appData.items.map(item => `
+                <tr>
+                    <td><strong>${item.name}</strong></td>
+                    <td>${item.category || '-'}</td>
+                    ${appData.stores.map(store => `
+                        <td>
+                            <input type="number" 
+                                   class="price-input" 
+                                   value="${item.prices[store] || ''}" 
+                                   placeholder="$0.00" 
+                                   step="0.01" 
+                                   min="0"
+                                   onchange="updatePrice('${item.id}', '${store}', this.value)">
+                        </td>
+                    `).join('')}
+                </tr>
+            `).join('');
+            
+            table.innerHTML = headers + '<tbody>' + rows + '</tbody>';
+        }
+
+        function updatePrice(itemId, store, value) {
+            const item = appData.items.find(i => i.id === itemId);
+            if (!item) return;
+            
+            const price = parseFloat(value);
+            const oldPrice = item.prices[store];
+            
+            if (price && price > 0) {
+                item.prices[store] = price;
+                
+                if (oldPrice !== price) {
+                    if (!appData.priceHistory[itemId]) {
+                        appData.priceHistory[itemId] = {};
+                    }
+                    if (!appData.priceHistory[itemId][store]) {
+                        appData.priceHistory[itemId][store] = [];
+                    }
+                    appData.priceHistory[itemId][store].push({
+                        price: price,
+                        date: new Date().toISOString()
+                    });
+                }
+            } else {
+                delete item.prices[store];
+            }
+            
+            saveToSupabase();
+            renderItems();
+        }
+
+        // Price History
+        function updateHistorySelect() {
+            const select = document.getElementById('historyItemSelect');
+            select.innerHTML = '<option value="">Select an item</option>' + 
+                appData.items.map(item => `<option value="${item.id}">${item.name}</option>`).join('');
+        }
+
+        function showItemHistory() {
+            const itemId = document.getElementById('historyItemSelect').value;
+            const container = document.getElementById('historyContent');
+            
+            if (!itemId) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📊</div>
+                        <p>Select an item to view its price history</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            const item = appData.items.find(i => i.id === itemId);
+            const history = appData.priceHistory[itemId] || {};
+            
+            if (Object.keys(history).length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📊</div>
+                        <p>No price history for this item yet</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '';
+            
+            Object.entries(history).forEach(([store, priceData]) => {
+                if (priceData.length === 0) return;
+                
+                html += `
+                    <div style="margin-bottom: 32px;">
+                        <h3 style="margin-bottom: 16px; color: var(--accent-primary);">${store}</h3>
+                        <div class="history-list">
+                            ${priceData.slice().reverse().map(entry => `
+                                <div class="history-item">
+                                    <span class="history-date">${new Date(entry.date).toLocaleDateString()}</span>
+                                    <span class="history-price">$${entry.price.toFixed(2)}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="chart-${store.replace(/\s+/g, '-')}"></canvas>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+            
+            setTimeout(() => {
+                Object.entries(history).forEach(([store, priceData]) => {
+                    if (priceData.length === 0) return;
+                    
+                    const ctx = document.getElementById(`chart-${store.replace(/\s+/g, '-')}`);
+                    if (!ctx) return;
+                    
+                    new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: priceData.map(entry => new Date(entry.date).toLocaleDateString()),
+                            datasets: [{
+                                label: 'Price',
+                                data: priceData.map(entry => entry.price),
+                                borderColor: '#00ff88',
+                                backgroundColor: 'rgba(0, 255, 136, 0.1)',
+                                tension: 0.4,
+                                fill: true
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    display: false
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: false,
+                                    ticks: {
+                                        callback: function(value) {
+                                            return '$' + value.toFixed(2);
+                                        },
+                                        color: '#a0a8c1'
+                                    },
+                                    grid: {
+                                        color: '#2a3254'
+                                    }
+                                },
+                                x: {
+                                    ticks: {
+                                        color: '#a0a8c1'
+                                    },
+                                    grid: {
+                                        color: '#2a3254'
+                                    }
+                                }
+                            }
+                        }
+                    });
+                });
+            }, 100);
+        }
+
+        // Export/Import
+        function exportData() {
+            const dataStr = JSON.stringify({
+                stores: appData.stores,
+                items: appData.items,
+                priceHistory: appData.priceHistory,
+                exportedAt: new Date().toISOString()
+            }, null, 2);
+            
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `grocery-tracker-${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            showNotification('Data exported successfully!', 'success');
+        }
+
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    
+                    if (confirm('Import data? This will replace your current data.')) {
+                        appData.stores = data.stores || appData.stores;
+                        appData.items = data.items || appData.items;
+                        appData.priceHistory = data.priceHistory || appData.priceHistory;
+                        
+                        saveToSupabase();
+                        renderStores();
+                        renderItems();
+                        renderPriceGrid();
+                        updateHistorySelect();
+                        
+                        showNotification('Data imported successfully!', 'success');
+                    }
+                } catch (error) {
+                    showNotification('Invalid file format', 'error');
+                }
+            };
+            reader.readAsText(file);
+            
+            event.target.value = '';
+        }
+
+        // Utility Functions
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
+        function previewImage(event, previewId) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const preview = document.getElementById(previewId);
+                    preview.src = e.target.result;
+                    preview.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function showNotification(message, type = 'success') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        // Initialize on load
+        window.addEventListener('load', init);
+        
+        // Close modals on outside click
+        window.addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal')) {
+                e.target.classList.remove('active');
+            }
+        });
+
+        // Auto-save on page unload
+        window.addEventListener('beforeunload', () => {
+            saveToSupabase();
+        });
+    </script>
+</body>
+</html>
